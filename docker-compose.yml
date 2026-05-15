@@ -1,0 +1,107 @@
+services:
+
+  # ── MinIO ─────────────────────────────────────────────────────────────────────
+  # Data Lake : stockage objet compatible S3.
+  # Sert de zone d'atterrissage pour les fichiers bruts (CSV, JSON, Parquet…)
+  # avant transformation vers le DWH PostgreSQL.
+  # UI d'administration disponible sur le port 9001.
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"   # API S3
+      - "9001:9001"   # Console web
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - minio_data:/data
+    networks:
+      - data_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── PostgreSQL ────────────────────────────────────────────────────────────────
+  # Data Warehouse : base relationnelle centrale du projet.
+  # Reçoit les données transformées depuis Apache Hop et alimente Metabase.
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - data_network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Apache Hop ────────────────────────────────────────────────────────────────
+  # Outil ETL (Extract, Transform, Load).
+  # Orchestre les pipelines de données entre MinIO (source brute)
+  # et PostgreSQL (destination transformée).
+  # Les pipelines sont persistés dans le volume hop_pipelines.
+  hop:
+    image: apache/hop:latest
+    container_name: hop
+    ports:
+      - "8080:8080"
+    volumes:
+      - hop_pipelines:/files
+    networks:
+      - data_network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+
+  # ── Metabase ──────────────────────────────────────────────────────────────────
+  # Outil de Business Intelligence (BI) et visualisation.
+  # Se connecte directement à PostgreSQL pour créer tableaux de bord et rapports.
+  # Utilise PostgreSQL comme base de métadonnées interne (via les variables MB_DB_*).
+  metabase:
+    image: metabase/metabase:latest
+    container_name: metabase
+    ports:
+      - "3000:3000"
+    environment:
+      MB_DB_TYPE: ${MB_DB_TYPE}
+      MB_DB_DBNAME: ${MB_DB_DBNAME}
+      MB_DB_PORT: ${MB_DB_PORT}
+      MB_DB_USER: ${MB_DB_USER}
+      MB_DB_PASS: ${MB_DB_PASS}
+      MB_DB_HOST: ${MB_DB_HOST}
+    networks:
+      - data_network
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+# ── Volumes persistants ───────────────────────────────────────────────────────
+volumes:
+  minio_data:
+  postgres_data:
+  hop_pipelines:
+
+# ── Réseau partagé ────────────────────────────────────────────────────────────
+# Tous les services communiquent via ce réseau bridge interne.
+# Les services se joignent par leur nom de container (ex: "postgres", "minio").
+networks:
+  data_network:
+    driver: bridge
