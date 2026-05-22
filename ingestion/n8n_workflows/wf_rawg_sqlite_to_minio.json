@@ -1,0 +1,76 @@
+{
+  "name": "RAWG SQLite → MinIO",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "b2000002-0000-0000-0000-000000000001",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileName": "/data/raw/rawg/rawg.sqlite",
+        "options": {}
+      },
+      "id": "b2000002-0000-0000-0000-000000000002",
+      "name": "Read rawg.sqlite",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucket": "raw-data",
+        "fileKey": "=`source=rawg/ingested_at=${$now.format('yyyy-MM-dd')}/rawg.sqlite`",
+        "binaryPropertyName": "data",
+        "options": {
+          "binaryFile": true
+        }
+      },
+      "id": "b2000002-0000-0000-0000-000000000003",
+      "name": "Upload rawg to MinIO",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [440, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read rawg.sqlite",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read rawg.sqlite": {
+      "main": [
+        [
+          {
+            "node": "Upload rawg to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "b2000002-0000-0000-0000-000000000000",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "wf-rawg-to-minio",
+  "tags": []
+}

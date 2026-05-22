@@ -1,0 +1,76 @@
+{
+  "name": "vgsales CSV → MinIO",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "a1000001-0000-0000-0000-000000000001",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 300]
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "fileName": "/data/raw/vgsales/vgsales.csv",
+        "options": {}
+      },
+      "id": "a1000001-0000-0000-0000-000000000002",
+      "name": "Read vgsales.csv",
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "operation": "upload",
+        "bucket": "raw-data",
+        "fileKey": "=`source=vgsales/ingested_at=${$now.format('yyyy-MM-dd')}/vgsales.csv`",
+        "binaryPropertyName": "data",
+        "options": {
+          "binaryFile": true
+        }
+      },
+      "id": "a1000001-0000-0000-0000-000000000003",
+      "name": "Upload vgsales to MinIO",
+      "type": "n8n-nodes-base.s3",
+      "typeVersion": 1,
+      "position": [440, 300]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read vgsales.csv",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read vgsales.csv": {
+      "main": [
+        [
+          {
+            "node": "Upload vgsales to MinIO",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "a1000001-0000-0000-0000-000000000000",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "wf-vgsales-to-minio",
+  "tags": []
+}

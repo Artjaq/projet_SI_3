@@ -1,23 +1,25 @@
 import json
 import os
 import time
-from datetime import date
 from pathlib import Path
 
-import boto3
 import requests
-from botocore.client import Config
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
 
-STEAM_API_KEY  = os.environ["STEAM_API_KEY"]
-MINIO_ENDPOINT = os.environ["MINIO_ENDPOINT"]
-MINIO_ACCESS_KEY = os.environ["MINIO_ACCESS_KEY"]
-MINIO_SECRET_KEY = os.environ["MINIO_SECRET_KEY"]
-MINIO_BUCKET   = os.environ.get("MINIO_BUCKET") or os.environ.get("MINIO_BUCKET_RAW", "raw-data")
+STEAM_API_KEY = os.environ["STEAM_API_KEY"]
 
-KNOWN_APPIDS = {
+APPDETAILS_URL = "https://store.steampowered.com/api/appdetails/"
+PLAYERS_URL    = "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
+
+STEAMSPY_SOURCES = [
+    "https://steamspy.com/api.php?request=top100in2weeks",
+    "https://steamspy.com/api.php?request=top100forever",
+    "https://steamspy.com/api.php?request=all&page=0",
+]
+
+PLAYERS_APPIDS = {
     730:     "CS2",
     570:     "Dota2",
     440:     "TF2",
@@ -30,10 +32,7 @@ KNOWN_APPIDS = {
     413150:  "Stardew",
 }
 
-TODAY = date.today().isoformat()
-
-APPDETAILS_URL  = "https://store.steampowered.com/api/appdetails/"
-PLAYERS_URL     = "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/"
+OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "raw" / "steam"
 
 
 def fetch_with_retry(url: str, params: dict | None = None, max_retries: int = 3) -> dict:
@@ -50,67 +49,69 @@ def fetch_with_retry(url: str, params: dict | None = None, max_retries: int = 3)
             time.sleep(wait)
 
 
-def minio_client():
-    return boto3.client(
-        "s3",
-        endpoint_url=MINIO_ENDPOINT,
-        aws_access_key_id=MINIO_ACCESS_KEY,
-        aws_secret_access_key=MINIO_SECRET_KEY,
-        config=Config(signature_version="s3v4"),
-        region_name="us-east-1",
-    )
-
-
-def upload(client, key: str, payload: dict) -> int:
-    data = json.dumps(payload, ensure_ascii=False, indent=2).encode()
-    client.put_object(Bucket=MINIO_BUCKET, Key=key, Body=data, ContentType="application/json")
-    return len(data)
+def get_appids(target: int = 500) -> list[int]:
+    seen: set[int] = set()
+    appids: list[int] = []
+    for url in STEAMSPY_SOURCES:
+        if len(appids) >= target:
+            break
+        print(f"  Fetching {url} …")
+        try:
+            data = fetch_with_retry(url)
+            for appid_str in data.keys():
+                appid = int(appid_str)
+                if appid not in seen:
+                    seen.add(appid)
+                    appids.append(appid)
+        except Exception as exc:
+            print(f"  WARNING: {url}: {exc}")
+    return appids[:target]
 
 
 def main():
-    s3 = minio_client()
-    uploads = []
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    # 1. App details for known appids (replaces the deprecated GetAppList endpoint)
-    print("Fetching app details (store.steampowered.com/api/appdetails) …")
+    # 1. Collect 500 appids from SteamSpy
+    print("Collecting 500 appids from SteamSpy …")
+    appids = get_appids(500)
+    print(f"  → {len(appids)} unique appids")
+
+    # 2. App details
+    print(f"\nFetching appdetails for {len(appids)} appids …")
     appdetails: dict[str, object] = {}
-    for appid, name in KNOWN_APPIDS.items():
-        print(f"  appid={appid} ({name})")
+    for i, appid in enumerate(appids, 1):
+        print(f"  appid {i}/{len(appids)} (id={appid})")
         try:
             data = fetch_with_retry(APPDETAILS_URL, params={"appids": appid, "filters": "basic"})
             appdetails[str(appid)] = data.get(str(appid), {})
         except requests.RequestException as exc:
-            print(f"  WARNING: failed for appid {appid}: {exc}")
+            print(f"  WARNING: appid {appid}: {exc}")
             appdetails[str(appid)] = {"error": str(exc)}
-        time.sleep(0.3)  # be polite to Steam's store API
+        time.sleep(0.3)
 
-    key = f"source=steam/endpoint=applist/ingested_at={TODAY}/applist.json"
-    size = upload(s3, key, appdetails)
-    uploads.append((key, size))
-    print(f"  → uploaded ({size:,} bytes)")
+    appdetails_path = OUTPUT_DIR / "appdetails.json"
+    appdetails_path.write_text(json.dumps(appdetails, ensure_ascii=False, indent=2))
 
-    # 2. Current players for known appids
-    print("Fetching GetNumberOfCurrentPlayers …")
+    # 3. Current players (hardcoded 10 games)
+    print("\nFetching GetNumberOfCurrentPlayers …")
     players: dict[str, object] = {}
-    for appid, name in KNOWN_APPIDS.items():
+    for appid, name in PLAYERS_APPIDS.items():
         print(f"  appid={appid} ({name})")
         try:
             data = fetch_with_retry(PLAYERS_URL, params={"key": STEAM_API_KEY, "appid": appid})
             players[str(appid)] = data
         except requests.RequestException as exc:
-            print(f"  WARNING: failed for appid {appid}: {exc}")
+            print(f"  WARNING: appid {appid}: {exc}")
             players[str(appid)] = {"error": str(exc)}
 
-    key = f"source=steam/endpoint=players/ingested_at={TODAY}/players.json"
-    size = upload(s3, key, players)
-    uploads.append((key, size))
-    print(f"  → uploaded ({size:,} bytes)")
+    players_path = OUTPUT_DIR / "players.json"
+    players_path.write_text(json.dumps(players, ensure_ascii=False, indent=2))
 
     # Summary
-    print("\n── Upload summary ──────────────────────────────────")
-    for k, s in uploads:
-        print(f"  {MINIO_BUCKET}/{k}  ({s:,} bytes)")
-    print(f"  Total: {len(uploads)} file(s), {sum(s for _, s in uploads):,} bytes")
+    print("\n── Summary ──────────────────────────────────────────")
+    print(f"  appids fetched : {len(appdetails)}")
+    print(f"  {appdetails_path}  ({appdetails_path.stat().st_size:,} bytes)")
+    print(f"  {players_path}  ({players_path.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":
