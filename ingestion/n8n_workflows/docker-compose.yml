@@ -1,0 +1,64 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# n8n – orchestrateur d'ingestion local
+#
+# Usage : depuis ce dossier →  docker compose up -d
+# Prérequis :
+#   - Tailscale actif (accès à MinIO sur 10.14.190.18:9000)
+#   - Fichier ../../.env présent (variables MINIO_* et N8N_*)
+#   - Datasets déposés dans ../../data/ (vgsales.csv, igdb.sqlite)
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── n8n ───────────────────────────────────────────────────────────────────
+  # Interface web de création et d'exécution des workflows d'ingestion.
+  # Accessible sur http://localhost:5678 une fois démarré.
+  n8n:
+    image: n8nio/n8n:latest
+
+    # ── Port ─────────────────────────────────────────────────────────────────
+    # Expose le port 5678 uniquement sur localhost (pas de binding 0.0.0.0).
+    ports:
+      - "127.0.0.1:5678:5678"
+
+    # ── Variables d'environnement ─────────────────────────────────────────────
+    # Chargées depuis le .env à la racine du projet.
+    # N8N_BASIC_AUTH_* : protège l'interface web par login/mot de passe.
+    # MINIO_* : transmises aux credentials n8n via les workflows.
+    env_file:
+      - ../../.env
+    environment:
+      # Active l'authentification HTTP basic sur l'interface n8n
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+
+      # Fuseau horaire pour les déclencheurs cron et les logs
+      GENERIC_TIMEZONE: Europe/Paris
+
+      # Rend les variables MINIO disponibles dans les expressions n8n
+      # (utilisables via $env.MINIO_ENDPOINT, etc.)
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET_RAW: ${MINIO_BUCKET_RAW}
+
+    # ── Volumes ───────────────────────────────────────────────────────────────
+    volumes:
+      # Volume nommé : persiste les workflows, credentials et logs n8n
+      # entre les redémarrages du container.
+      - n8n_data:/home/node/.n8n
+
+      # Bind-mount en LECTURE SEULE du dossier data/ racine.
+      # n8n voit les fichiers sous /data (ex: /data/vgsales.csv).
+      # :ro interdit toute écriture depuis le container.
+      - ../../data:/data:ro
+
+    # ── Redémarrage automatique ───────────────────────────────────────────────
+    # Le container redémarre si Docker redémarre, sauf arrêt manuel explicite.
+    restart: unless-stopped
+
+# ── Volume nommé ─────────────────────────────────────────────────────────────
+# Géré par Docker ; survit aux `docker compose down` sans --volumes.
+volumes:
+  n8n_data:

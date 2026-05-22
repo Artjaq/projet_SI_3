@@ -149,6 +149,7 @@ activemq-data/
 
 # Environments
 .env
+.env.local
 .envrc
 .venv
 env/
@@ -216,3 +217,15 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Données locales (datasets Kaggle – ne pas commiter)
+# ─────────────────────────────────────────────────────────────────────────────
+data/
+!data/README.md
+
+# Fichiers de données brutes (sauf dans docs/)
+*.csv
+!docs/**/*.csv
+*.sqlite
+*.db

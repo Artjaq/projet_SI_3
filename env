@@ -1,0 +1,19 @@
+# ── MinIO (Data Lake) ─────────────────────────────────────────────────────────
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
+
+# ── PostgreSQL (Data Warehouse) ───────────────────────────────────────────────
+POSTGRES_DB=datawarehouse
+POSTGRES_USER=admin
+POSTGRES_PASSWORD=admin
+
+# ── Metabase ──────────────────────────────────────────────────────────────────
+MB_DB_TYPE=postgres
+MB_DB_DBNAME=datawarehouse
+MB_DB_PORT=5432
+MB_DB_USER=admin
+MB_DB_PASS=admin
+MB_DB_HOST=postgres
+STEAM_API_KEY=B55CA473D0BEE5B72EE8B8D63C9BFCB4
+RAWG_API_KEY=5841ee3c48b343d1a2af64e94d442231
+
