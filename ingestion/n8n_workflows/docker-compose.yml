@@ -43,6 +43,9 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET_RAW: ${MINIO_BUCKET_RAW}
 
+      # Restreint l'accès fichier de n8n aux répertoires montés
+      N8N_RESTRICT_FILE_ACCESS_TO: /data;/home/node/.n8n-files
+
     # ── Volumes ───────────────────────────────────────────────────────────────
     volumes:
       # Volume nommé : persiste les workflows, credentials et logs n8n
